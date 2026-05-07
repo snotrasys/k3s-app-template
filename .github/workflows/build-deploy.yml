@@ -72,7 +72,7 @@ jobs:
 
           IMAGE="${{ steps.meta.outputs.image }}"
           DESTINATIONS="--destination=${IMAGE}:${{ steps.meta.outputs.sha }} --destination=${IMAGE}:${{ steps.meta.outputs.ref }}"
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             DESTINATIONS="$DESTINATIONS --destination=${IMAGE}:latest"
           fi
 
