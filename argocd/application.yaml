@@ -1,0 +1,92 @@
+# ArgoCD Application + ApplicationSet para esta app
+# COPIA este archivo a tu repo gitops-infra (o aplícalo directo con kubectl)
+# y reemplaza __APP_NAME__ con el nombre real del app/repo.
+---
+# Producción — main branch → __APP_NAME__.goliat.snotrasys.com
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: __APP_NAME__-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/snotrasys/__APP_NAME__
+    targetRevision: main
+    path: k8s/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: __APP_NAME__
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - ServerSideApply=true
+      - PrunePropagationPolicy=foreground
+---
+# Previews — un Application por PR (auto-cleanup al cerrar)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: __APP_NAME__-previews
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  generators:
+    - pullRequest:
+        github:
+          owner: snotrasys
+          repo: __APP_NAME__
+          appSecretName: github-app-snotrasys
+        requeueAfterSeconds: 60
+
+  template:
+    metadata:
+      name: '__APP_NAME__-pr-{{.number}}'
+      labels:
+        preview: 'true'
+        pr: '{{.number | toString}}'
+        app: __APP_NAME__
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/snotrasys/__APP_NAME__
+        targetRevision: '{{.head_sha}}'
+        path: k8s/base
+        kustomize:
+          namespace: '__APP_NAME__-pr-{{.number}}'
+          images:
+            - 'harbor.harbor.svc.cluster.local:80/apps/__APP_NAME__=harbor.harbor.svc.cluster.local:80/apps/__APP_NAME__:{{.head_sha}}'
+          patches:
+            - target:
+                kind: Namespace
+                name: placeholder-namespace
+              patch: |-
+                - op: replace
+                  path: /metadata/name
+                  value: '__APP_NAME__-pr-{{.number}}'
+            - target:
+                kind: IngressRoute
+                name: app
+              patch: |-
+                - op: replace
+                  path: /spec/routes/0/match
+                  value: 'Host(`__APP_NAME__-{{ .branch_slug }}-{{ .head_short_sha_7 }}.goliat.snotrasys.com`)'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '__APP_NAME__-pr-{{.number}}'
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: true
+        syncOptions:
+          - ServerSideApply=true
+          - PrunePropagationPolicy=foreground
+          - PruneLast=true

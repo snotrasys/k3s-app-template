@@ -1,0 +1,101 @@
+name: build & deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'k8s/**'
+      - 'argocd/**'
+      - 'README.md'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - 'k8s/**'
+      - 'argocd/**'
+      - 'README.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+# IMAGE = harbor/<project>/<repo>
+# El nombre del repo se autodetecta — no hace falta cambiar nada al clonar el template.
+env:
+  HARBOR: harbor.harbor.svc.cluster.local:80
+  HARBOR_PROJECT: apps
+
+jobs:
+  build:
+    runs-on: k3s-prod-runners
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine SHA + tag
+        id: meta
+        run: |
+          APP="${{ github.event.repository.name }}"
+          IMAGE="${HARBOR}/${HARBOR_PROJECT}/${APP}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SHA="${{ github.event.pull_request.head.sha }}"
+            REF="pr-${{ github.event.pull_request.number }}"
+          else
+            SHA="${{ github.sha }}"
+            REF="main"
+          fi
+          echo "app=$APP"           >> $GITHUB_OUTPUT
+          echo "image=$IMAGE"       >> $GITHUB_OUTPUT
+          echo "sha=$SHA"           >> $GITHUB_OUTPUT
+          echo "short_sha=${SHA:0:7}" >> $GITHUB_OUTPUT
+          echo "ref=$REF"           >> $GITHUB_OUTPUT
+          echo "Building $APP @ $REF / $SHA"
+
+      - name: Wait for dockerd
+        run: |
+          for i in $(seq 1 30); do
+            if docker info >/dev/null 2>&1; then echo "ready"; exit 0; fi
+            sleep 2
+          done
+          echo "dockerd never came up" && exit 1
+
+      - name: Build & push with kaniko
+        env:
+          HARBOR_USER: ${{ secrets.HARBOR_USER }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          AUTH=$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 -w 0)
+          mkdir -p "$GITHUB_WORKSPACE/.kaniko-config"
+          cat > "$GITHUB_WORKSPACE/.kaniko-config/config.json" <<EOF
+          {"auths": {"${HARBOR}": {"auth": "${AUTH}"}}}
+          EOF
+
+          IMAGE="${{ steps.meta.outputs.image }}"
+          DESTINATIONS="--destination=${IMAGE}:${{ steps.meta.outputs.sha }} --destination=${IMAGE}:${{ steps.meta.outputs.ref }}"
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            DESTINATIONS="$DESTINATIONS --destination=${IMAGE}:latest"
+          fi
+
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$GITHUB_WORKSPACE/.kaniko-config:/kaniko/.docker" \
+            gcr.io/kaniko-project/executor:debug \
+            --context=/workspace \
+            --dockerfile=Dockerfile \
+            $DESTINATIONS \
+            --insecure \
+            --build-arg COMMIT_SHA="${{ steps.meta.outputs.sha }}" \
+            --build-arg BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          rm -rf "$GITHUB_WORKSPACE/.kaniko-config"
+
+      - name: Done
+        run: |
+          IMAGE="${{ steps.meta.outputs.image }}"
+          echo "✓ pushed: ${IMAGE}:${{ steps.meta.outputs.sha }}"
+          echo "✓ pushed: ${IMAGE}:${{ steps.meta.outputs.ref }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            APP="${{ steps.meta.outputs.app }}"
+            BRANCH=$(echo "${{ github.event.pull_request.head.ref }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-30 | sed 's/-*$//')
+            echo "Preview URL: https://${APP}-${BRANCH}-${{ steps.meta.outputs.short_sha }}.goliat.snotrasys.com"
+          fi

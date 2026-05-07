@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Producción — main branch
+# IMPORTANTE: cambiar values aquí cuando clonas el template:
+#   - namespace
+#   - PROD_DOMAIN
+
+resources:
+  - ../base
+
+images:
+  - name: harbor.harbor.svc.cluster.local:80/apps/__APP_NAME__
+    newTag: latest
+
+patches:
+  - target:
+      kind: Namespace
+      name: placeholder-namespace
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: __APP_NAME__   # k8s namespace = nombre del app
+  - target:
+      kind: Deployment
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      kind: IngressRoute
+      name: app
+    patch: |-
+      - op: replace
+        path: /spec/routes/0/match
+        value: Host(`__APP_NAME__.goliat.snotrasys.com`)   # cambiar al dominio real

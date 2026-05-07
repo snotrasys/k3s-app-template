@@ -1,0 +1,13 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: app
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`placeholder.goliat.snotrasys.com`)   # patched per env
+      services:
+        - name: app
+          port: 80
