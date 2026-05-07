@@ -12,6 +12,13 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
+  # URLs visibles en ArgoCD UI (clickeables)
+  # IMPORTANTE: si cambias el dominio en k8s/prod/kustomization.yaml, actualízalo aquí también.
+  info:
+    - name: 'URL prod'
+      value: 'https://__APP_NAME__.goliat.snotrasys.com'
+    - name: 'Repo'
+      value: 'https://github.com/snotrasys/__APP_NAME__'
   source:
     repoURL: https://github.com/snotrasys/__APP_NAME__
     targetRevision: main
@@ -56,6 +63,13 @@ spec:
         - resources-finalizer.argocd.argoproj.io
     spec:
       project: default
+      info:
+        - name: 'Preview URL'
+          value: 'https://__APP_NAME__-{{ .branch_slug }}-{{ .head_short_sha_7 }}.goliat.snotrasys.com'
+        - name: 'Pull Request'
+          value: 'https://github.com/snotrasys/__APP_NAME__/pull/{{.number}}'
+        - name: 'Branch'
+          value: 'https://github.com/snotrasys/__APP_NAME__/tree/{{.branch}}'
       source:
         repoURL: https://github.com/snotrasys/__APP_NAME__
         targetRevision: '{{.head_sha}}'
