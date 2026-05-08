@@ -64,11 +64,13 @@ jobs:
           HARBOR_USER: ${{ secrets.HARBOR_USER }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
-          AUTH=$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 -w 0)
+          # Build config.json safely with jq — el robot user de Harbor tiene `$`
+          # que causa expansion issues en heredocs/shell strings.
           mkdir -p "$GITHUB_WORKSPACE/.kaniko-config"
-          cat > "$GITHUB_WORKSPACE/.kaniko-config/config.json" <<EOF
-          {"auths": {"${HARBOR}": {"auth": "${AUTH}"}}}
-          EOF
+          AUTH=$(printf '%s:%s' "$HARBOR_USER" "$HARBOR_PASSWORD" | base64 -w 0)
+          jq -n --arg url "$HARBOR" --arg auth "$AUTH" \
+            '{auths: {($url): {auth: $auth}}}' \
+            > "$GITHUB_WORKSPACE/.kaniko-config/config.json"
 
           IMAGE="${{ steps.meta.outputs.image }}"
           DESTINATIONS="--destination=${IMAGE}:${{ steps.meta.outputs.sha }} --destination=${IMAGE}:${{ steps.meta.outputs.ref }}"
