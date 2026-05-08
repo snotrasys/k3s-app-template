@@ -10,8 +10,10 @@ resources:
   - ../base
 
 images:
+  # `:main` es el tag explícito que el workflow pushea junto con :SHA en cada commit a main.
+  # Para promociones SHA-pinned, hacer `kustomize edit set image` en este overlay y commitear.
   - name: harbor.harbor.svc.cluster.local:80/apps/__APP_NAME__
-    newTag: latest
+    newTag: main
 
 patches:
   - target:
